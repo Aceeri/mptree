@@ -1,0 +1,8 @@
+[package]
+name = "mptree"
+version = "0.1.0"
+authors = ["Aceeri <conmcclusk@gmail.com>"]
+description = "An mp3 encoder/decoder library written in pure Rust."
+
+[dependencies]
+byteorder = "1.0.0"
