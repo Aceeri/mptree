@@ -2,6 +2,9 @@
 use std::io::{self, Read, Seek, SeekFrom, Cursor};
 use byteorder::{BigEndian, ReadBytesExt};
 
+use ::error::MpError;
+use ::header::Header;
+
 // bitrate lookup table
 pub static BITRATE_INDEX: [[u16; 14]; 5] = [
     [32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448], // Version 1, Layer 1
@@ -10,18 +13,6 @@ pub static BITRATE_INDEX: [[u16; 14]; 5] = [
     [32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256], // Version 2, Layer 2
     [8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160], // Version 2, Layer 2 & Layer 3
 ];
-
-#[derive(Debug)]
-pub enum MpError {
-    ReadError(io::Error),
-    NoCapture,
-}
-
-impl From<io::Error> for MpError {
-    fn from(io: io::Error) -> MpError {
-        MpError::ReadError(io)
-    }
-}
 
 pub struct FrameReader<R: io::Read + io::Seek> {
     reader: R,
@@ -43,6 +34,22 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
             }
         }
         (offset, None)
+    }
+
+    pub fn read(&mut self) -> Result<(), MpError> {
+        let header_data = try!(self.read_until_header()); // get next header
+        let header = try!(Header::construct(&header_data));
+        println!("{:?}", header_data);
+        println!("{:?}", header);
+        
+        if header.protection() { // if the frame has a CRC-16 checksum.
+            let checksum = try!(self.reader.read_u16::<BigEndian>());
+            println!("Checksum: {:b}", checksum);
+            println!("Checksum: {:x}", checksum);
+
+        }
+
+        Ok(())
     }
 
     pub fn read_until_header(&mut self) -> Result<[u8; 4], MpError> {

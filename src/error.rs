@@ -10,7 +10,6 @@ pub enum MpError {
     BadBit(u16), // bit index was non-existent or forbidden
     InvalidMode(ChannelMode, Vec<ChannelMode>), // got, expected (on of)
     Reserved, // input a reserved mode, version, or layer
-
 }
 
 impl From<io::Error> for MpError {

@@ -103,13 +103,14 @@ pub enum Extension {
 pub struct Header {
     version: Version, // Version 1-2 (along with the unofficial 2.5)
     layer: Layer, // Layer 1-3
-    protection: bool, // Protected by a 16 bit CRC following header
+    protection: bool, // Protected by a 16 bit CRC following header (0 = protected, 1 = not)
     bitrate: u16, // Bitrate (kbps)
     sampling_rate: u16, // Sampling rate frequency index (Hz)
     padding: u8, // Frame padding for one extra slot
     private: bool, // Freely used for applications
-    copyright: bool, // Is copyrighted
-    original: bool, // Is the original copy
+    copyright: bool, // Is copyrighted (0 = not, 1 = copyrighted)
+    original: bool, // Is the original copy (0 = copy, 1 = original)
+    emphasis: u8, // 00 = none, 01 = 50/15 ms, 10 = reserved, 11 = CCIT J.17, rarely used
     channel: ChannelMode, // Mono, Dual, Stereo, JointStereo
 }
 
@@ -117,10 +118,10 @@ impl Header {
     pub fn construct(data: &[u8; 4]) -> Result<Header, MpError> {
         let version = ((data[1] & 0b0001_1000) >> 3).into();
         let layer: Layer = ((data[1] & 0b0000_0110) >> 1).into();
-        let protection: bool = (data[1] & 0b0000_0001) == 1;
+        let protection: bool = (data[1] & 0b0000_0001) == 0;
         let bitrate_index: u8 = (data[2] & 0b1111_0000) >> 4;
         let sampling_index: u8 = (data[2] & 0b0000_1100) >> 2;
-        let padding: u8 = data[2] & 0b0000_0010;
+        let padding: u8 = (data[2] & 0b0000_0010) >> 1;
         let private: bool = (data[2] & 0b0000_0001) == 1;
         let channel = match (data[3] & 0b1100_0000) >> 6 {
             0 => ChannelMode::Stereo,
@@ -149,8 +150,8 @@ impl Header {
         let original = (data[3] & 0b0000_0100) == 4;
         let emphasis = data[3] & 0b0000_0011;
 
-        let bitrate = try!(Header::bitrate(bitrate_index, &version, &layer, &channel));
-        let sampling_rate = try!(Header::sampling_rate(sampling_index, &version));
+        let bitrate = try!(Header::lookup_bitrate(bitrate_index, &version, &layer, &channel));
+        let sampling_rate = try!(Header::lookup_sampling_rate(sampling_index, &version));
 
         Ok(Header {
             version: version,
@@ -162,12 +163,13 @@ impl Header {
             private: private,
             copyright: copyright,
             original: original,
+            emphasis: emphasis,
             channel: channel,
         })
     }
 
     // Returns the bitrate of the header.
-    pub fn bitrate(bit: u8, version: &Version, layer: &Layer, channel: &ChannelMode) -> Result<u16, MpError> {
+    pub fn lookup_bitrate(bit: u8, version: &Version, layer: &Layer, channel: &ChannelMode) -> Result<u16, MpError> {
         if version == &Version::Reserved || layer == &Layer::Reserved {
             return Err(MpError::Reserved);
         }
@@ -180,7 +182,7 @@ impl Header {
             (_, _) => 4,
         };
 
-        if bit > 15 {
+        if bit > 14 {
             return Err(MpError::BadBit(bit as u16)); // bit index was too high
         }
 
@@ -217,7 +219,7 @@ impl Header {
     }
 
     // Returns the sampling rate from the version and the sampling index. Errors if takes in reserved values.
-    pub fn sampling_rate(bit: u8, version: &Version) -> Result<u16, MpError> {
+    pub fn lookup_sampling_rate(bit: u8, version: &Version) -> Result<u16, MpError> {
         if bit == 3 {
             Err(MpError::Reserved)
         }
@@ -230,6 +232,66 @@ impl Header {
             };
             Ok(SAMPLING_RATE[index][bit as usize])
         }
+    }
+
+    // Returns the frame length based on this header.
+    pub fn frame_length(&self) -> u32 {
+        if self.layer == Layer::Layer1 {
+            ((12 * (self.bitrate as u32 * 1000) / (self.sampling_rate as u32) + self.padding as u32) * 4)
+        }
+        else {
+            (144 * (self.bitrate as u32 * 1000) / (self.sampling_rate as u32) + self.padding as u32)
+        }
+    }
+
+    #[inline]
+    pub fn version(&self) -> &Version {
+        &self.version
+    }
+
+    #[inline]
+    pub fn layer(&self) -> &Layer {
+        &self.layer
+    }
+
+    #[inline]
+    pub fn protection(&self) -> bool {
+        self.protection
+    }
+
+    #[inline]
+    pub fn bitrate(&self) -> u16 {
+        self.bitrate
+    }
+
+    #[inline]
+    pub fn sampling_rate(&self) -> u16 {
+        self.sampling_rate
+    }
+
+    #[inline]
+    pub fn padding(&self) -> u8 {
+        self.padding
+    }
+
+    #[inline]
+    pub fn private(&self) -> bool {
+        self.private
+    }
+
+    #[inline]
+    pub fn copyright(&self) -> bool {
+        self.copyright
+    }
+
+    #[inline]
+    pub fn original(&self) -> bool {
+        self.original
+    }
+
+    #[inline]
+    pub fn channel(&self) -> &ChannelMode {
+        &self.channel
     }
 }
 

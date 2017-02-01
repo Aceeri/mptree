@@ -6,3 +6,4 @@ description = "An mp3 encoder/decoder library written in pure Rust."
 
 [dependencies]
 byteorder = "1.0.0"
+crc16 = "0.3.3"
