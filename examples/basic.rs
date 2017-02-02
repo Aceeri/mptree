@@ -6,12 +6,12 @@ use std::io::{Read, Cursor};
 use std::fs::{File};
 
 fn main() {
-    //let file = File::open("examples/3-note.mp3").unwrap();
-    //let mut frame_reader = decoder::FrameReader::new(file);
+    let file = File::open("examples/3-note.mp3").unwrap();
+    let mut frame_reader = decoder::FrameReader::new(file);
 
-    let data = [0xFF, 0xFB, 0x78, 0x64];
-    let cursor = Cursor::new(data);
-    let mut frame_reader = decoder::FrameReader::new(cursor);
+    //let data = [0xFF, 0xFB, 0x78, 0x64];
+    //let cursor = Cursor::new(data);
+    //let mut frame_reader = decoder::FrameReader::new(cursor);
     /*for _ in 0..50 {
         let header_data = match frame_reader.read_until_header() {
             Ok(header) => header,

@@ -237,10 +237,10 @@ impl Header {
     // Returns the frame length based on this header.
     pub fn frame_length(&self) -> u32 {
         if self.layer == Layer::Layer1 {
-            ((12 * (self.bitrate as u32 * 1000) / (self.sampling_rate as u32) + self.padding as u32) * 4)
+            ((12 * (self.bitrate as u32 * 1000) / self.sampling_rate as u32 + self.padding as u32) * 4)
         }
         else {
-            (144 * (self.bitrate as u32 * 1000) / (self.sampling_rate as u32) + self.padding as u32)
+            (144 * (self.bitrate as u32 * 1000) / self.sampling_rate as u32 + self.padding as u32)
         }
     }
 

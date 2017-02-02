@@ -5,15 +5,6 @@ use byteorder::{BigEndian, ReadBytesExt};
 use ::error::MpError;
 use ::header::Header;
 
-// bitrate lookup table
-pub static BITRATE_INDEX: [[u16; 14]; 5] = [
-    [32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448], // Version 1, Layer 1
-    [32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384], // Version 1, Layer 2
-    [32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320], // Version 1, Layer 3
-    [32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256], // Version 2, Layer 2
-    [8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160], // Version 2, Layer 2 & Layer 3
-];
-
 pub struct FrameReader<R: io::Read + io::Seek> {
     reader: R,
 }
@@ -41,13 +32,17 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
         let header = try!(Header::construct(&header_data));
         println!("{:?}", header_data);
         println!("{:?}", header);
-        
-        if header.protection() { // if the frame has a CRC-16 checksum.
-            let checksum = try!(self.reader.read_u16::<BigEndian>());
-            println!("Checksum: {:b}", checksum);
-            println!("Checksum: {:x}", checksum);
 
+        let mut read = 4; // bytes ready read into a frame.
+        
+        let mut checksum = None;
+        if header.protection() { // if the frame has a CRC-16 checksum.
+            checksum = Some(try!(self.reader.read_u16::<BigEndian>()));
+            read += 2;
         }
+
+        let frame_length = header.frame_length();
+        println!("frame length: {:?}", frame_length);
 
         Ok(())
     }
