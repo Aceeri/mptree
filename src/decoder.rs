@@ -3,7 +3,7 @@ use std::io::{self, Read, Seek, SeekFrom, Cursor};
 use byteorder::{BigEndian, ReadBytesExt};
 
 use ::error::MpError;
-use ::header::Header;
+use ::header::{ChannelMode, Header};
 
 pub struct FrameReader<R: io::Read + io::Seek> {
     reader: R,
@@ -28,7 +28,7 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
     }
 
     pub fn read(&mut self) -> Result<(), MpError> {
-        let header_data = try!(self.read_until_header()); // get next header
+        let (index, header_data) = try!(self.read_until_header()); // get next header
         let header = try!(Header::construct(&header_data));
         println!("{:?}", header_data);
         println!("{:?}", header);
@@ -44,27 +44,30 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
         let frame_length = header.frame_length();
         println!("frame length: {:?}", frame_length);
 
+        let mut side_info_length = 32;
+        if header.channel() == &ChannelMode::Mono {
+            side_info_length = 17;
+        }
+        let mut side_info = vec![0x00; side_info_length];
+        self.reader.read_exact(&mut side_info);
+
         Ok(())
     }
 
-    pub fn read_until_header(&mut self) -> Result<[u8; 4], MpError> {
+    // Returns the index the header was located and the header data.
+    pub fn read_until_header(&mut self) -> Result<(usize, [u8; 4]), MpError> {
         let mut header_buffer: [u8; 4] = [0; 4];
         try!(self.reader.read_exact(&mut header_buffer));
+        
+        // early return for when the header was at the beginning of the buffer.
         if let Some(index) = FrameReader::<R>::check_sync(&header_buffer, false).1 {
-            if index == 1 {
-                return Ok(header_buffer);
-            }
-            else {
-                let mut offset_buffer: [u8; 4] = [0; 4];
-                let copy_len = header_buffer.len() - index;
-                (&mut offset_buffer[0..copy_len]).copy_from_slice(&header_buffer[index..]);
-                try!(self.reader.read_exact(&mut offset_buffer[copy_len..]));
-                return Ok(offset_buffer);
+            if index == 1 { // if the header was at the beginning of the buffer
+                return Ok((index - 1, header_buffer));
             }
         }
 
         let mut read_amount = 4;
-        let read_limit = 150 * 1024;
+        let read_limit = 150 * 1024; // 150kb
         let mut reader_buffer: [u8; 1024] = [0; 1024];
         let mut offset = false;
         loop {
@@ -99,10 +102,10 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
                         try!(self.reader.read_exact(&mut offset_buffer[remaining + 2..]));
                     }
                     
-                    return Ok(offset_buffer);
+                    return Ok((index - 1, offset_buffer));
                 },
                 (found, None) => {
-                    // if this is true then it found the initial of the header sync, need another byte to determine validity.
+                    // if this is true then it found the initial byte of the header sync, but we need another byte to determine validity.
                     // if this isn't true then no header sync was found in this buffer.
                     offset = found;
                 },
@@ -115,9 +118,5 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
                 return Err(MpError::NoCapture);
             }
         }
-    }
-
-    pub fn read_one(&mut self) -> u8 {
-        self.reader.read_u8().unwrap()
     }
 }
