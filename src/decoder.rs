@@ -2,6 +2,7 @@
 use std::io::{self, Read, Seek, SeekFrom, Cursor};
 use byteorder::{BigEndian, ReadBytesExt};
 
+use ::frame::Frame;
 use ::error::MpError;
 use ::header::{ChannelMode, Header};
 
@@ -16,6 +17,7 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
         }
     }
 
+    // Check if the array of data has the header sync.
     fn check_sync(data: &[u8], mut offset: bool) -> (bool, Option<usize>) {
         for (index, byte) in data.iter().enumerate() {
             match offset {
@@ -27,29 +29,18 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
         (offset, None)
     }
 
+    // Attempt to construct an mp3 from the reader.
     pub fn read(&mut self) -> Result<(), MpError> {
         let (index, header_data) = try!(self.read_until_header()); // get next header
-        let header = try!(Header::construct(&header_data));
-        println!("{:?}", header_data);
-        println!("{:?}", header);
+        let header = try!(Header::new(&header_data)); // construct header
 
-        let mut read = 4; // bytes ready read into a frame.
-        
-        let mut checksum = None;
-        if header.protection() { // if the frame has a CRC-16 checksum.
-            checksum = Some(try!(self.reader.read_u16::<BigEndian>()));
-            read += 2;
-        }
+        let frame_length = header.frame_length(); // create buffer and read in frame data
+        let mut frame_data = vec![0x00; (frame_length - 4) as usize];
+        self.reader.read_exact(&mut frame_data);
 
-        let frame_length = header.frame_length();
-        println!("frame length: {:?}", frame_length);
+        let frame = try!(Frame::new(header, frame_length, frame_data.as_slice())); // construct frame
 
-        let mut side_info_length = 32;
-        if header.channel() == &ChannelMode::Mono {
-            side_info_length = 17;
-        }
-        let mut side_info = vec![0x00; side_info_length];
-        self.reader.read_exact(&mut side_info);
+        println!("Frame: {:?}", frame);
 
         Ok(())
     }

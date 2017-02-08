@@ -6,7 +6,7 @@ use std::io::{Read, Cursor};
 use std::fs::{File};
 
 fn main() {
-    let file = File::open("examples/3-note.mp3").unwrap();
+    let file = File::open("examples/whatislove.mp3").unwrap();
     let mut frame_reader = decoder::FrameReader::new(file);
 
     //let data = [0xFF, 0xFB, 0x78, 0x64];
@@ -28,4 +28,5 @@ fn main() {
     }*/
 
     frame_reader.read();
+    println!("----------------------------------------");
 }
