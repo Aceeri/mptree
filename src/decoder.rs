@@ -8,6 +8,7 @@ use ::header::{ChannelMode, Header};
 
 pub struct FrameReader<R: io::Read + io::Seek> {
     reader: R,
+    buffer: Vec<u8>, // We keep a buffer of the surrounding frame data.
 }
 
 impl<R: io::Read + io::Seek> FrameReader<R> {
@@ -18,6 +19,7 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
     }
 
     // Check if the array of data has the header sync.
+    // The MP3 header sync is 0xFF 0xE0.
     fn check_sync(data: &[u8], mut offset: bool) -> (bool, Option<usize>) {
         for (index, byte) in data.iter().enumerate() {
             match offset {
@@ -31,14 +33,14 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
 
     // Attempt to construct an mp3 from the reader.
     pub fn read(&mut self) -> Result<(), MpError> {
-        let (index, header_data) = try!(self.read_until_header()); // get next header
-        let header = try!(Header::new(&header_data)); // construct header
+        let (index, header_data) = self.read_until_header()?; // get next header
+        let header = Header::new(&header_data)?;
 
         let frame_length = header.frame_length(); // create buffer and read in frame data
         let mut frame_data = vec![0x00; (frame_length - 4) as usize];
         self.reader.read_exact(&mut frame_data);
 
-        let frame = try!(Frame::new(header, frame_length, frame_data.as_slice())); // construct frame
+        let frame = Frame::new(header, frame_length, frame_data.as_slice())?;
 
         println!("Frame: {:?}", frame);
 
@@ -62,7 +64,7 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
         let mut reader_buffer: [u8; 1024] = [0; 1024];
         let mut offset = false;
         loop {
-            let read = try!(self.reader.read(&mut reader_buffer));
+            let read = self.reader.read(&mut reader_buffer)?;
             read_amount += read;
             
             if read == 0 {

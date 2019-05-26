@@ -6,6 +6,7 @@ use ::header::ChannelMode;
 #[derive(Debug)]
 pub enum MpError {
     ReadError(io::Error),
+    NotMp3(Layer),
     NoCapture, // could not capture header sync
     BadBit(u16), // bit index was non-existent or forbidden
     InvalidMode(ChannelMode, Vec<ChannelMode>), // got, expected (on of)

@@ -86,16 +86,17 @@ impl Header {
                 let extension = data[3] & 0b0011_0000; // Joint Stereo extension
 
                 let parsed_extension = match layer {
-                    Layer::Layer1 | Layer::Layer2 => {
-                        let value = 4 + (4 * extension >> 4);
-                        Extension::Bands(value)
-                    },
                     Layer::Layer3 => {
                         let intensity = extension >> 5 == 1;
                         let ms = extension >> 4 & 1 == 1;
                         Extension::Stereo(intensity, ms)
                     },
-                    _ => return Err(MpError::Reserved),
+                    _ => {
+                        // Just an mp3 decoder, let's not get into MPEG-1 Layer 1/2/Reserved
+                        return Err(MpError::NotMp3(layer))
+                        //let value = 4 + (4 * extension >> 4);
+                        //Extension::Bands(value)
+                    },
                 };
                 ChannelMode::JointStereo(parsed_extension)
             },
@@ -107,8 +108,8 @@ impl Header {
         let original = (data[3] & 0b0000_0100) == 4;
         let emphasis = data[3] & 0b0000_0011;
 
-        let bitrate = try!(Header::lookup_bitrate(bitrate_index, &version, &layer, &channel));
-        let sampling_rate = try!(Header::lookup_sampling_rate(sampling_index, &version));
+        let bitrate = Header::lookup_bitrate(bitrate_index, &version, &layer, &channel)?;
+        let sampling_rate = Header::lookup_sampling_rate(sampling_index, &version)?;
 
         Ok(Header {
             version: version,
