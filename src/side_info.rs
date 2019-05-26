@@ -3,6 +3,8 @@ use ::bitcursor::BitCursor;
 use ::error::MpError;
 use ::header::{ChannelMode, Header};
 
+use bitstream_io::{BitReader, BigEndian};
+
 // Technically this is 1441 - side info size (mono) - HEADER_SIZE if you don't support MPEG 2_5 Layer 3, otherwise the maximum here is
 // 2881 if you have a MPEG 2_5 Layer 3 with a bitrate of 160kbps and a sampling rate of 8000Hz.
 // 
@@ -20,7 +22,7 @@ pub struct SideInformation {
 
 impl SideInformation {
     pub fn new(header: &Header, data: &[u8]) -> Result<SideInformation, MpError> {
-        let mut cursor = BitCursor::new(&data);
+        let mut reader = BitReader::endian(data, BigEndian);
 
         let mono = header.channel() == &ChannelMode::Mono;
 
@@ -41,35 +43,35 @@ impl SideInformation {
         let mut granules = [Granule::new(); 2];
         let mut scsfi = [[0; 4]; 2];
 
-        let main_data_begin = cursor.read_bits(9) as u16;
+        let main_data_begin = reader.read(9)?;
 
         // Skip private bits
-        cursor.add_offset(private_bits);
+        reader.skip(private_bits)?;
 
         for ch in 0..channel_count {
             for band in 0..4 {
-                scsfi[ch][band] = cursor.read_bits(1) as u8;
+                scsfi[ch][band] = reader.read(1)?;
             }
         }
 
         for gr in 0..2 {
             for ch in 0..channel_count {
-                granules[gr].part2_3_length[ch] = cursor.read_bits(12) as u32;
-                granules[gr].big_values[ch] = cursor.read_bits(9) as u32;
-                granules[gr].global_gain[ch] = cursor.read_bits(8) as u16;
-                granules[gr].scalefactor_compress[ch] = cursor.read_bits(4) as u8;
-                granules[gr].windows_switching[ch] = cursor.read_bits(1) as u8;
+                granules[gr].part2_3_length[ch] = reader.read(12)?;
+                granules[gr].big_values[ch] = reader.read(9)?;
+                granules[gr].global_gain[ch] = reader.read(8)?;
+                granules[gr].scalefactor_compress[ch] = reader.read(4)?;
+                granules[gr].windows_switching[ch] = reader.read(1)?;
 
                 if granules[gr].windows_switching[ch] == 1 {
-                    granules[gr].block_type[ch] = cursor.read_bits(2) as u8;
-                    granules[gr].mixed_blockflag[ch] = cursor.read_bits(1) == 1;
+                    granules[gr].block_type[ch] = reader.read(2)?;
+                    granules[gr].mixed_blockflag[ch] = reader.read::<u8>(1)? == 1;
 
                     for region in 0..2 {
-                        granules[gr].table_select[ch][region] = cursor.read_bits(5) as u32;
+                        granules[gr].table_select[ch][region] = reader.read(5)?;
                     }
 
                     for window in 0..3 {
-                        granules[gr].subblock_gain[ch][window] = cursor.read_bits(3) as u32;
+                        granules[gr].subblock_gain[ch][window] = reader.read(3)?;
                     }
 
                     granules[gr].region0_count[ch] = if granules[gr].block_type[ch] == 2 {
@@ -83,20 +85,20 @@ impl SideInformation {
                 }
                 else {
                     for region in 0..3 {
-                        granules[gr].table_select[ch][region] = cursor.read_bits(5) as u32;
+                        granules[gr].table_select[ch][region] = reader.read(5)?;
                     }
 
                     granules[gr].block_type[ch] = 0;
                     granules[gr].mixed_blockflag[ch] = false;
-                    granules[gr].region0_count[ch] = cursor.read_bits(4) as u8;
-                    granules[gr].region1_count[ch] = cursor.read_bits(3) as u8;
+                    granules[gr].region0_count[ch] = reader.read(4)?;
+                    granules[gr].region1_count[ch] = reader.read(3)?;
                 }
 
-                granules[gr].preflag[ch] = cursor.read_bits(1) as u8;
+                granules[gr].preflag[ch] = reader.read(1)?;
 
-                granules[gr].scalefactor_scale[ch] = cursor.read_bits(1) as u8;
+                granules[gr].scalefactor_scale[ch] = reader.read(1)?;
 
-                granules[gr].count1table_select[ch] = cursor.read_bits(1) as u8;
+                granules[gr].count1table_select[ch] = reader.read(1)?;
             }
         }
         

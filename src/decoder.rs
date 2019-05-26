@@ -1,5 +1,6 @@
 
 use std::io;
+use std::collections::VecDeque;
 
 use ::error::MpError;
 use ::header::{Header, ChannelMode};
@@ -15,6 +16,10 @@ pub struct FrameReader<R: io::Read + io::Seek> {
     // main data from prior frames, then we should either error or load the previous frames
     // if possible.
     main_data: VecDeque<u8>,
+
+    // Frames can only reach back 2 consecutive frames into the past. Therefore we only save the
+    // past 2 frames and the current frame we are on.
+    frame_indices: [usize; 3],
 }
 
 // How many bytes ahead should we check before erroring on header seeking.
@@ -25,6 +30,7 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
         FrameReader {
             reader: reader,
             main_data: VecDeque::new(),
+            frame_indices: [0; 3],
         }
     }
 
