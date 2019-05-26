@@ -6,8 +6,10 @@ use std::fmt::{self, Display, Formatter};
 
 // MP3 headers are 4 bytes long.
 pub const HEADER_SIZE: usize = 4;
+// CRC16 checksums are 2 bytes long.
+pub const CHECKSUM_SIZE: usize = 2;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Version {
     Version2_5, // unofficial version for very low bitrate files
     Reserved,
@@ -19,15 +21,14 @@ impl From<u8> for Version {
     fn from(data: u8) -> Version {
         match data {
             0 => Version::Version2_5,
-            1 => Version::Reserved,
-            2 => Version::Version2,
+            1 => Version::Reserved, 2 => Version::Version2,
             3 => Version::Version1,
             _ => unreachable!(),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Layer {
     Reserved,
     Layer3,
@@ -128,7 +129,7 @@ impl Header {
         let original = (data[3] & 0b0000_0100) == 0b0000_0100;
         let emphasis = data[3] & 0b0000_0011;
 
-        let bitrate = Header::lookup_bitrate(bitrate_index, &version, &layer, &channel)?;
+        let bitrate = Header::lookup_bitrate(bitrate_index, &version, &layer)?;
         let sampling_rate = Header::lookup_sampling_rate(sampling_index, &version)?;
 
         Ok(Header {
@@ -147,7 +148,7 @@ impl Header {
     }
 
     // Returns the bitrate of the header.
-    pub fn lookup_bitrate(bit: u8, version: &Version, layer: &Layer, channel: &ChannelMode) -> Result<u16, MpError> {
+    pub fn lookup_bitrate(bit: u8, version: &Version, layer: &Layer) -> Result<u16, MpError> {
         if version == &Version::Reserved || layer == &Layer::Reserved {
             return Err(MpError::Reserved);
         }
@@ -183,8 +184,8 @@ impl Header {
         }
     }
 
-    // Returns the frame length based on this header.
-    pub fn frame_length(&self) -> u16 {
+    // Returns the frame size based on this header.
+    pub fn frame_size(&self) -> u16 {
         (144 * (self.bitrate as u32 * 1000) / self.sampling_rate as u32 + self.padding as u32) as u16
     }
 
@@ -239,3 +240,51 @@ impl Header {
     }
 }
 
+pub fn max_frame_size() {
+    let mp3_possibilites: Vec<(Version, Layer)> = vec![
+        (Version::Version1, Layer::Layer3),
+        (Version::Version2, Layer::Layer3),
+        (Version::Version2_5, Layer::Layer3),
+    ];
+
+    let bitrate_possibilities = 0..0b1111;
+    let sampling_possibilities = 0..0b11;
+
+    for (version, layer) in mp3_possibilites {
+        for bitrate_index in bitrate_possibilities.clone() {
+            for sampling_index in sampling_possibilities.clone() {
+                let bitrate = match Header::lookup_bitrate(bitrate_index, &version, &layer) {
+                    Ok(bitrate) => bitrate,
+                    Err(err) => {
+                        dbg!(err);
+                        continue;
+                    }
+                };
+
+                let sampling_rate = match Header::lookup_sampling_rate(sampling_index, &version) {
+                    Ok(sampling_rate) => sampling_rate,
+                    Err(err) => {
+                        dbg!(err);
+                        continue;
+                    }
+                };
+
+                let mut header = Header {
+                    version: version,
+                    layer: layer,
+                    protection: false,
+                    bitrate: bitrate,
+                    sampling_rate: sampling_rate,
+                    padding: 1,
+                    private: false,
+                    copyright: false,
+                    original: false,
+                    emphasis: 0b00,
+                    channel: ChannelMode::Stereo,
+                };
+                let frame_size = header.frame_size();
+                println!("{:9}: {:?} {} {} {}", frame_size, version, layer.clone(), bitrate_index, sampling_index);
+            }
+        }
+    }
+}

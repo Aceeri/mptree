@@ -1,9 +1,9 @@
 
-use std::io::{self, Read};
+use std::io;
 
-use ::frame::Frame;
 use ::error::MpError;
-use ::header::{Header, HEADER_SIZE};
+use ::header::{Header, ChannelMode};
+use ::side_info::SideInformation;
 
 use byteorder::ReadBytesExt;
 
@@ -21,12 +21,12 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
         }
     }
 
-    pub fn advance(&mut self) -> Result<Frame, MpError> {
+    pub fn advance(&mut self) -> Result<(), MpError> {
         let header = self.find_header(HEADER_LIMIT).ok_or(MpError::NoHeaderCapture)?;
         dbg!(header.clone());
 
-        let frame = Frame::new(header, &mut self.reader)?;
-        dbg!(frame.clone());
+        let side_information = self.construct_side_information(&header)?;
+        dbg!(side_information.clone());
         Err(MpError::InvalidData("Unimplemented".to_string()))
     }
 
@@ -58,5 +58,25 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
         }
 
         None
+    }
+
+    fn construct_side_information(&mut self, header: &Header) -> Result<SideInformation, MpError> {
+        let mut mono_buffer = [0u8; 17];
+        let mut dual_buffer = [0u8; 32];
+        let side_info_data: &[u8] = if header.channel() == &ChannelMode::Mono {
+            self.reader.read_exact(&mut mono_buffer)?;
+            &mono_buffer
+        } else {
+            self.reader.read_exact(&mut dual_buffer)?;
+            &dual_buffer
+        };
+
+        print!("side_info_data: ");
+        for byte in side_info_data {
+            print!("{:08b} ", byte);
+        }
+        println!();
+
+        Ok(SideInformation::new(&header, &side_info_data)?)
     }
 }

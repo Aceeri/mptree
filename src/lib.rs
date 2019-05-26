@@ -6,6 +6,6 @@ pub mod bitcursor;
 pub mod tables;
 pub mod decoder;
 pub mod header;
-pub mod frame;
+pub mod side_info;
 pub mod huffman;
 

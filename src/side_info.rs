@@ -1,68 +1,50 @@
 
-use std::io::{self, Read};
-
 use ::bitcursor::BitCursor;
 use ::error::MpError;
 use ::header::{ChannelMode, Header};
 
-#[derive(Debug, Clone)]
-pub struct Frame {
-    header: Header, 
-    size: u16, // Size in bytes how long the frame is.
+// Technically this is 1441 - side info size (mono) - HEADER_SIZE if you don't support MPEG 2_5 Layer 3, otherwise the maximum here is
+// 2881 if you have a MPEG 2_5 Layer 3 with a bitrate of 160kbps and a sampling rate of 8000Hz.
+// 
+// I'm leaving a bit of wiggle room here just for weird purposes.
+pub const MAX_FRAME_SIZE: u16 = 3000;
 
+#[derive(Debug, Clone)]
+pub struct SideInformation {
+    main_data_size: u16, // Size in bytes how long the main data is.
     main_data_begin: u16, // Negative offset to where the audio data begins, ignore static parts of frames.
     scfsi: [[u8; 4]; 2], // SCaleFactor Selection Information.
 
     granules: [Granule; 2],
 }
 
-impl Frame {
-    pub fn new<R>(header: Header, mut reader: R) -> Result<Frame, MpError>
-    where
-        R: io::Read + io::Seek,
-    {
+impl SideInformation {
+    pub fn new(header: &Header, data: &[u8]) -> Result<SideInformation, MpError> {
+        let mut cursor = BitCursor::new(&data);
+
         let mono = header.channel() == &ChannelMode::Mono;
+
         let channel_count = if mono { 1 } else { 2 };
         let private_bits = if mono { 5 } else { 3 };
 
-        let side_info_length = if mono { 17 } else { 32 };
-
-        let mut mono_buffer = [0u8; 17];
-        let mut dual_buffer = [0u8; 32];
-        let side_info_data: &[u8] = if mono {
-            reader.read_exact(&mut mono_buffer)?;
-            &mono_buffer
-        } else {
-            reader.read_exact(&mut dual_buffer)?;
-            &dual_buffer
-        };
-
-        print!("side_info_data: ");
-        for byte in side_info_data {
-            print!("{:08b} ", byte);
+        let side_info_size = if mono { 17 } else { 32 };
+        let mut main_data_size = header.frame_size() - side_info_size - ::header::HEADER_SIZE as u16;
+        
+        if main_data_size > MAX_FRAME_SIZE {
+            return Err(MpError::InvalidData(format!("Frame size too large (>2000): {}", main_data_size)));
         }
-        println!();
 
-        let mut cursor = BitCursor::new(&side_info_data);
-
-        // CRC-16 protection checksum
         if header.protection() {
-            /*
-            if !Frame::checksum(data) {
-                return Err(MpError::InvalidChecksum);
-            }
-            */
-            cursor.add_offset(16);
+            main_data_size -= ::header::CHECKSUM_SIZE as u16;
         }
-
-
-        // Private bits
-        cursor.add_offset(private_bits);
 
         let mut granules = [Granule::new(); 2];
         let mut scsfi = [[0; 4]; 2];
 
         let main_data_begin = cursor.read_bits(9) as u16;
+
+        // Skip private bits
+        cursor.add_offset(private_bits);
 
         for ch in 0..channel_count {
             for band in 0..4 {
@@ -128,13 +110,10 @@ impl Frame {
             }
         }
         
-        Ok(Frame {
-            header: header,
-            size: 0,
-            
+        Ok(SideInformation {
+            main_data_size: main_data_size,
             main_data_begin: main_data_begin,
             scfsi: scsfi,
-
             granules: granules,
         })
     }
