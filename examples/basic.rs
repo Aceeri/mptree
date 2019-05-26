@@ -27,7 +27,7 @@ fn main() {
         }
     }*/
 
-    loop {
+    for i in 0..5 {
         match frame_reader.advance() {
             Ok(frame) => {
                 dbg!(frame);
