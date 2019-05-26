@@ -8,7 +8,13 @@ use ::side_info::SideInformation;
 use byteorder::ReadBytesExt;
 
 pub struct FrameReader<R: io::Read + io::Seek> {
+    // File (preferably buffered), stream, array, etc.
     reader: R,
+
+    // Main data bit reservoir for future frames. If we start in the middle and require
+    // main data from prior frames, then we should either error or load the previous frames
+    // if possible.
+    main_data: VecDeque<u8>,
 }
 
 // How many bytes ahead should we check before erroring on header seeking.
@@ -18,6 +24,7 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
     pub fn new(reader: R) -> FrameReader<R> {
         FrameReader {
             reader: reader,
+            main_data: VecDeque::new(),
         }
     }
 

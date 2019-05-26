@@ -54,31 +54,16 @@ impl SideInformation {
 
         for gr in 0..2 {
             for ch in 0..channel_count {
-                // Length of the scaling factors and main data in bits.
                 granules[gr].part2_3_length[ch] = cursor.read_bits(12) as u32;
-
-                // Number of values in the big region.
                 granules[gr].big_values[ch] = cursor.read_bits(9) as u32;
-
-                // Quantization step size.
                 granules[gr].global_gain[ch] = cursor.read_bits(8) as u16;
-                
                 granules[gr].scalefactor_compress[ch] = cursor.read_bits(4) as u8;
-
                 granules[gr].windows_switching[ch] = cursor.read_bits(1) as u8;
 
                 if granules[gr].windows_switching[ch] == 1 {
-                    // Window type for the granules[gr]
                     granules[gr].block_type[ch] = cursor.read_bits(2) as u8;
-
-                    // Number of scale factor bands before window switching
                     granules[gr].mixed_blockflag[ch] = cursor.read_bits(1) == 1;
 
-                    // Regions set by default if window switching
-                    granules[gr].region0_count[ch] = if granules[gr].block_type[ch] == 2 { 8 } else { 7 };
-                    granules[gr].region1_count[ch] = 20 - granules[gr].region0_count[ch];
-                    
-                    // Huffman table number for big regions
                     for region in 0..2 {
                         granules[gr].table_select[ch][region] = cursor.read_bits(5) as u32;
                     }
@@ -86,19 +71,24 @@ impl SideInformation {
                     for window in 0..3 {
                         granules[gr].subblock_gain[ch][window] = cursor.read_bits(3) as u32;
                     }
+
+                    granules[gr].region0_count[ch] = if granules[gr].block_type[ch] == 2 {
+                        8
+                    } else {
+                        7
+                    };
+
+                    // Standard is wrong here apparently...
+                    granules[gr].region1_count[ch] = 20 - granules[gr].region0_count[ch];
                 }
                 else {
-                    granules[gr].block_type[ch] = 0;
-                    granules[gr].mixed_blockflag[ch] = false;
-                    
                     for region in 0..3 {
                         granules[gr].table_select[ch][region] = cursor.read_bits(5) as u32;
                     }
 
-                    // Number of scale factor bands in the first big value region.
+                    granules[gr].block_type[ch] = 0;
+                    granules[gr].mixed_blockflag[ch] = false;
                     granules[gr].region0_count[ch] = cursor.read_bits(4) as u8;
-                    
-                    // Number of scale factor bands in the third big value region.
                     granules[gr].region1_count[ch] = cursor.read_bits(3) as u8;
                 }
 
