@@ -11,9 +11,6 @@ pub struct FrameReader<R: io::Read + io::Seek> {
     reader: R,
 }
 
-// How many bytes to take at once from the reader.
-//const BUFFER_AMOUNT: usize = 1024;
-
 // How many bytes ahead should we check before erroring on header seeking.
 const HEADER_LIMIT: usize = 1024 * 10; // 10kB
 
@@ -26,7 +23,10 @@ impl<R: io::Read + io::Seek> FrameReader<R> {
 
     pub fn advance(&mut self) -> Result<Frame, MpError> {
         let header = self.find_header(HEADER_LIMIT).ok_or(MpError::NoHeaderCapture)?;
-        dbg!(header);
+        dbg!(header.clone());
+
+        let frame = Frame::new(header, &mut self.reader)?;
+        dbg!(frame.clone());
         Err(MpError::InvalidData("Unimplemented".to_string()))
     }
 

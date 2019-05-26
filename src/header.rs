@@ -101,7 +101,7 @@ impl Header {
         let padding: u8 = (data[2] & 0b0000_0010) >> 1;
         let private: bool = (data[2] & 0b0000_0001) == 1;
         let channel = match data[3] & 0b1100_0000 {
-            0b0000_0000 => ChannelMode::Stereo,
+            0b00 => ChannelMode::Stereo,
             0b0100_0000 => {
                 //let extension = data[3] & 0b0011_0000; // Joint Stereo extension
 

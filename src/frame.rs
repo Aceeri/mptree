@@ -1,4 +1,6 @@
 
+use std::io::{self, Read};
+
 use ::bitcursor::BitCursor;
 use ::error::MpError;
 use ::header::{ChannelMode, Header};
@@ -9,33 +11,39 @@ pub struct Frame {
     size: u16, // Size in bytes how long the frame is.
 
     main_data_begin: u16, // Negative offset to where the audio data begins, ignore static parts of frames.
-    scfsi: [[u8; 4]; 2], // ScaleFactor Selection Information.
+    scfsi: [[u8; 4]; 2], // SCaleFactor Selection Information.
 
     granules: [Granule; 2],
-    /*
-    // 2 granules, 2 channels
-    granules: [Granule; 2],
-    part2_3_length: [[u32; 2]; 2], // Number of bits allocated for scalefactors and Huffman encoded data.
-    big_values: [[u32; 2]; 2],
-    global_gain: [[u16; 2]; 2], // Quantization step size.
-    scalefactor_compress: [[u8; 2]; 2], // Number of bits used for the transmission of scalefactors.
-    windows_switching: [[u8; 2]; 2],
-    block_type: [[u8; 2]; 2],
-    mixed_blockflag: [[u8; 2]; 2],
-    table_select: [[[u32; 3]; 2]; 2],
-    subblock_gain: [[[u32; 3]; 2]; 2],
-    region0_count: [[u8; 2]; 2],
-    region1_count: [[u8; 2]; 2],
-    preflag: [[u8; 2]; 2],
-    scalefactor_scale: [[u8; 2]; 2],
-    count1_table_select: [[u8; 2]; 2],  // Specifies which count1 region Huffman code table applies.
-    */
 }
 
 impl Frame {
-    pub fn new(header: Header, length: u16, data: &[u8]) -> Result<Frame, MpError> {
-        let mut cursor = BitCursor::new(data);
+    pub fn new<R>(header: Header, mut reader: R) -> Result<Frame, MpError>
+    where
+        R: io::Read + io::Seek,
+    {
         let mono = header.channel() == &ChannelMode::Mono;
+        let channel_count = if mono { 1 } else { 2 };
+        let private_bits = if mono { 5 } else { 3 };
+
+        let side_info_length = if mono { 17 } else { 32 };
+
+        let mut mono_buffer = [0u8; 17];
+        let mut dual_buffer = [0u8; 32];
+        let side_info_data: &[u8] = if mono {
+            reader.read_exact(&mut mono_buffer)?;
+            &mono_buffer
+        } else {
+            reader.read_exact(&mut dual_buffer)?;
+            &dual_buffer
+        };
+
+        print!("side_info_data: ");
+        for byte in side_info_data {
+            print!("{:08b} ", byte);
+        }
+        println!();
+
+        let mut cursor = BitCursor::new(&side_info_data);
 
         // CRC-16 protection checksum
         if header.protection() {
@@ -43,28 +51,27 @@ impl Frame {
             if !Frame::checksum(data) {
                 return Err(MpError::InvalidChecksum);
             }
-
-            cursor.set_offset(16);
             */
+            cursor.add_offset(16);
         }
 
+
         // Private bits
-        cursor.add_offset(if mono { 5 } else { 3 });
+        cursor.add_offset(private_bits);
 
         let mut granules = [Granule::new(); 2];
         let mut scsfi = [[0; 4]; 2];
-        let channel_range = if mono { 1 } else { 2 };
 
         let main_data_begin = cursor.read_bits(9) as u16;
 
-        for ch in 0..channel_range {
+        for ch in 0..channel_count {
             for band in 0..4 {
                 scsfi[ch][band] = cursor.read_bits(1) as u8;
             }
         }
 
         for gr in 0..2 {
-            for ch in 0..channel_range {
+            for ch in 0..channel_count {
                 // Length of the scaling factors and main data in bits.
                 granules[gr].part2_3_length[ch] = cursor.read_bits(12) as u32;
 
@@ -120,42 +127,10 @@ impl Frame {
                 granules[gr].count1table_select[ch] = cursor.read_bits(1) as u8;
             }
         }
-
-        /*
-        // get basic side information (main_data_begin, scsfi)
-        let main_data_begin: u16 = ((data[cursor] as u16) << 1) | ((data[cursor + 1] >> 7) as u16); // Concatenate 9 bits from two bytes
-
-        let scsfi = if mono {
-            let band1 = data[cursor + 1] & 0b0000_0010 >> 1;
-            let band2 = data[cursor + 1] & 0b0000_0001;
-            let band3 = data[cursor + 2] & 0b1000_0000 >> 7;
-            let band4 = data[cursor + 2] & 0b0100_0000 >> 6;
-            [[band1, band2, band3, band4], [0; 4]]
-        }
-        else {
-            let ch1 = {
-                let band1 = data[cursor + 1] & 0b0000_1000 >> 3;
-                let band2 = data[cursor + 1] & 0b0000_0100 >> 2;
-                let band3 = data[cursor + 1] & 0b1000_0010 >> 1;
-                let band4 = data[cursor + 1] & 0b0100_0001;
-                [band1, band2, band3, band4]
-            };
-
-            let ch2 = {
-                let band1 = data[cursor + 2] & 0b1000_0000 >> 7;
-                let band2 = data[cursor + 2] & 0b0100_0000 >> 6;
-                let band3 = data[cursor + 2] & 0b0010_0000 >> 5;
-                let band4 = data[cursor + 2] & 0b0001_0000 >> 4;
-                [band1, band2, band3, band4]
-            };
-
-            [ch1, ch2]
-        };
-        */
         
         Ok(Frame {
             header: header,
-            size: length,
+            size: 0,
             
             main_data_begin: main_data_begin,
             scfsi: scsfi,

@@ -23,7 +23,7 @@ impl<'a> BitCursor<'a> {
     pub fn read_bits(&mut self, bits: usize) -> u64 {
         let mut output = 0;
         for i in self.bit..(self.bit + bits) {
-            let byte = self.slice.get(i/8).cloned().unwrap_or(0);
+            let byte = self.slice[i/8];
             let b = (byte >> (7 - i%8)) & 1;
             output = (output << 1) | (b as u64);
         }
