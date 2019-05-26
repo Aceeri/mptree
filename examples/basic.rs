@@ -27,6 +27,18 @@ fn main() {
         }
     }*/
 
-    frame_reader.read();
+    loop {
+        match frame_reader.advance() {
+            Ok(frame) => {
+                dbg!(frame);
+            },
+            Err(mptree::error::MpError::NoHeaderCapture) => {
+                break;
+            }
+            Err(err) => {
+                dbg!(err);
+            },
+        }
+    }
     println!("----------------------------------------");
 }

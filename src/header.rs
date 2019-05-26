@@ -2,6 +2,11 @@
 use ::error::MpError;
 use ::tables::{BITRATE_INDEX, SAMPLING_RATE};
 
+use std::fmt::{self, Display, Formatter};
+
+// MP3 headers are 4 bytes long.
+pub const HEADER_SIZE: usize = 4;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Version {
     Version2_5, // unofficial version for very low bitrate files
@@ -28,6 +33,17 @@ pub enum Layer {
     Layer3,
     Layer2,
     Layer1,
+}
+
+impl Display for Layer {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            Layer::Reserved => "Reserved",
+            Layer::Layer3 => "Layer3",
+            Layer::Layer2 => "Layer2",
+            Layer::Layer1 => "Layer1",
+        })
+    }
 }
 
 impl From<u8> for Layer {
@@ -72,7 +88,11 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn new(data: &[u8; 4]) -> Result<Header, MpError> {
+    pub fn new(data: &[u8]) -> Result<Header, MpError> {
+        if data.len() != 4 {
+            return Err(MpError::InvalidData(format!("Header is {} instead of {} bytes", data.len(), HEADER_SIZE)));
+        }
+
         let version = ((data[1] & 0b0001_1000) >> 3).into();
         let layer: Layer = ((data[1] & 0b0000_0110) >> 1).into();
         let protection: bool = (data[1] & 0b0000_0001) == 0;
@@ -80,32 +100,32 @@ impl Header {
         let sampling_index: u8 = (data[2] & 0b0000_1100) >> 2;
         let padding: u8 = (data[2] & 0b0000_0010) >> 1;
         let private: bool = (data[2] & 0b0000_0001) == 1;
-        let channel = match (data[3] & 0b1100_0000) >> 6 {
-            0 => ChannelMode::Stereo,
-            1 => {
-                let extension = data[3] & 0b0011_0000; // Joint Stereo extension
+        let channel = match data[3] & 0b1100_0000 {
+            0b0000_0000 => ChannelMode::Stereo,
+            0b0100_0000 => {
+                //let extension = data[3] & 0b0011_0000; // Joint Stereo extension
 
                 let parsed_extension = match layer {
                     Layer::Layer3 => {
-                        let intensity = extension >> 5 == 1;
-                        let ms = extension >> 4 & 1 == 1;
+                        let intensity = data[3] & 0b0010_0000 == 0b0010_0000;
+                        let ms = data[3] & 0b0001_0000 == 0b0001_0000;
                         Extension::Stereo(intensity, ms)
                     },
                     _ => {
                         // Just an mp3 decoder, let's not get into MPEG-1 Layer 1/2/Reserved
-                        return Err(MpError::NotMp3(layer))
+                        return Err(MpError::InvalidData(::error::wrong_layer(&layer)))
                         //let value = 4 + (4 * extension >> 4);
                         //Extension::Bands(value)
                     },
                 };
                 ChannelMode::JointStereo(parsed_extension)
             },
-            2 => ChannelMode::Dual,
-            3 => ChannelMode::Mono,
-            _ => unreachable!(),
+            0b1000_0000 => ChannelMode::Dual,
+            0b1100_0000 => ChannelMode::Mono,
+            channel_bits => return Err(MpError::InvalidData(format!("channel data: {:b}, got: {:b}", data[3] & 0b1100_0000, channel_bits))),
         };
-        let copyright = (data[3] & 0b0000_1000) == 8;
-        let original = (data[3] & 0b0000_0100) == 4;
+        let copyright = (data[3] & 0b0000_1000) == 0b0000_1000;
+        let original = (data[3] & 0b0000_0100) == 0b0000_0100;
         let emphasis = data[3] & 0b0000_0011;
 
         let bitrate = Header::lookup_bitrate(bitrate_index, &version, &layer, &channel)?;
@@ -145,34 +165,6 @@ impl Header {
         }
 
         let bitrate = BITRATE_INDEX[column_index][bit as usize];
-        if layer == &Layer::Layer2 {
-            // if the bitrate is 32, 48, 56, or 80 and the channel is not mono, then invalid
-            if ((bitrate >= 32 && bitrate <= 56) || (bitrate == 80)) && channel != &ChannelMode::Mono {
-                return Err(MpError::InvalidMode(channel.clone(), vec![ChannelMode::Mono]));
-            }
-            
-            if bitrate >= 224 {
-                match channel {
-                    &ChannelMode::JointStereo(Extension::Stereo(false, _)) |
-                    &ChannelMode::Mono => {
-                        return Err(
-                            MpError::InvalidMode(
-                                channel.clone(), 
-                                vec![
-                                    ChannelMode::Dual,
-                                    ChannelMode::Stereo,
-                                    ChannelMode::JointStereo(Extension::Stereo(true, false)),
-                                    ChannelMode::JointStereo(Extension::Stereo(true, true)),
-                                ],
-                            )
-                        );
-                    },
-                    _ => (),
-
-                }
-            }
-        }
-
         Ok(bitrate)
     }
 
@@ -180,8 +172,7 @@ impl Header {
     pub fn lookup_sampling_rate(bit: u8, version: &Version) -> Result<u16, MpError> {
         if bit == 3 {
             Err(MpError::Reserved)
-        }
-        else {
+        } else {
             let index = match version {
                 &Version::Version1 => 0,
                 &Version::Version2 => 1,
@@ -194,12 +185,7 @@ impl Header {
 
     // Returns the frame length based on this header.
     pub fn frame_length(&self) -> u16 {
-        if self.layer == Layer::Layer1 {
-            ((12 * (self.bitrate as u32 * 1000) / self.sampling_rate as u32 + self.padding as u32) * 4) as u16
-        }
-        else {
-            (144 * (self.bitrate as u32 * 1000) / self.sampling_rate as u32 + self.padding as u32) as u16
-        }
+        (144 * (self.bitrate as u32 * 1000) / self.sampling_rate as u32 + self.padding as u32) as u16
     }
 
     #[inline]

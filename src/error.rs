@@ -1,13 +1,14 @@
 
 use std::io;
 
-use ::header::ChannelMode;
+use ::header::{Layer, ChannelMode};
 
 #[derive(Debug)]
 pub enum MpError {
-    ReadError(io::Error),
-    NotMp3(Layer),
-    NoCapture, // could not capture header sync
+    IOError(io::Error),
+    EOF,
+    InvalidData(String),
+    NoHeaderCapture, // could not capture header sync
     BadBit(u16), // bit index was non-existent or forbidden
     InvalidMode(ChannelMode, Vec<ChannelMode>), // got, expected (on of)
     Reserved, // input a reserved mode, version, or layer
@@ -15,6 +16,10 @@ pub enum MpError {
 
 impl From<io::Error> for MpError {
     fn from(io: io::Error) -> MpError {
-        MpError::ReadError(io)
+        MpError::IOError(io)
     }
+}
+
+pub fn wrong_layer(layer: &Layer) -> String {
+    format!("Layer {} is currently unsupported", layer)
 }
