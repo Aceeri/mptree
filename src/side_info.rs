@@ -1,5 +1,4 @@
 
-use ::bitcursor::BitCursor;
 use ::error::MpError;
 use ::header::{ChannelMode, Header};
 
@@ -15,8 +14,7 @@ pub const MAX_FRAME_SIZE: u16 = 3000;
 pub struct SideInformation {
     main_data_size: u16, // Size in bytes how long the main data is.
     main_data_begin: u16, // Negative offset to where the audio data begins, ignore static parts of frames.
-    scfsi: [[u8; 4]; 2], // SCaleFactor Selection Information.
-
+    scfsi: [[bool; 4]; 2], // SCaleFactor Selection Information.
     granules: [Granule; 2],
 }
 
@@ -30,18 +28,19 @@ impl SideInformation {
         let private_bits = if mono { 5 } else { 3 };
 
         let side_info_size = if mono { 17 } else { 32 };
-        let mut main_data_size = header.frame_size() - side_info_size - ::header::HEADER_SIZE as u16;
+        // TODO: Check if this should be 0 or -17/-32 - HEADER_SIZE.
+        let mut main_data_size = header.frame_size().saturating_sub(side_info_size + ::header::HEADER_SIZE as u16);
         
         if main_data_size > MAX_FRAME_SIZE {
             return Err(MpError::InvalidData(format!("Frame size too large (>2000): {}", main_data_size)));
         }
 
         if header.protection() {
-            main_data_size -= ::header::CHECKSUM_SIZE as u16;
+            main_data_size = main_data_size.saturating_sub(::header::CHECKSUM_SIZE as u16);
         }
 
         let mut granules = [Granule::new(); 2];
-        let mut scsfi = [[0; 4]; 2];
+        let mut scsfi = [[false; 4]; 2];
 
         let main_data_begin = reader.read(9)?;
 
@@ -50,7 +49,7 @@ impl SideInformation {
 
         for ch in 0..channel_count {
             for band in 0..4 {
-                scsfi[ch][band] = reader.read(1)?;
+                scsfi[ch][band] = reader.read_bit()?;
             }
         }
 
@@ -64,7 +63,7 @@ impl SideInformation {
 
                 if granules[gr].windows_switching[ch] == 1 {
                     granules[gr].block_type[ch] = reader.read(2)?;
-                    granules[gr].mixed_blockflag[ch] = reader.read::<u8>(1)? == 1;
+                    granules[gr].mixed_blockflag[ch] = reader.read_bit()?;
 
                     for region in 0..2 {
                         granules[gr].table_select[ch][region] = reader.read(5)?;
@@ -94,7 +93,7 @@ impl SideInformation {
                     granules[gr].region1_count[ch] = reader.read(3)?;
                 }
 
-                granules[gr].preflag[ch] = reader.read(1)?;
+                granules[gr].preflag[ch] = reader.read_bit()?;
 
                 granules[gr].scalefactor_scale[ch] = reader.read(1)?;
 
@@ -129,9 +128,12 @@ pub struct Granule {
     subblock_gain: [[u32; 3]; 2],
     region0_count: [u8; 2],
     region1_count: [u8; 2],
-    preflag: [u8; 2],
+    preflag: [bool; 2],
     scalefactor_scale: [u8; 2],
     count1table_select: [u8; 2],  // Specifies which count1 region Huffman code table applies.
+}
+
+pub enum BlockType {
 }
 
 impl Granule {
@@ -148,7 +150,7 @@ impl Granule {
             subblock_gain: [[0; 3]; 2],
             region0_count: [0; 2],
             region1_count: [0; 2],
-            preflag: [0; 2],
+            preflag: [false; 2],
             scalefactor_scale: [0; 2],
             count1table_select: [0; 2],
         }
